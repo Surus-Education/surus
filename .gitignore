@@ -1,7 +1,6 @@
 # Environment
 *.env
 .env.*
-api/.env
 
 # Go
 api/tmp/
@@ -14,3 +13,11 @@ web/out/
 
 # OS
 .DS_Store
+
+# Logs
+.api*
+.web*
+
+# Exceptions
+!api/.env.example
+!web/.env.example
