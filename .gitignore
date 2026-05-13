@@ -1,0 +1,16 @@
+# Environment
+*.env
+.env.*
+api/.env
+
+# Go
+api/tmp/
+api/dist/
+
+# Node
+node_modules/
+web/.next/
+web/out/
+
+# OS
+.DS_Store

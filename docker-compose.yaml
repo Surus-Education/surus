@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: surus
+      POSTGRES_PASSWORD: surus
+      POSTGRES_DB: surus_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U surus -d surus_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
