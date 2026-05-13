@@ -31,7 +31,7 @@ async function serverFetch<T>(path: string, options?: { auth?: boolean; revalida
 }
 
 export async function getCourse(courseId: string): Promise<{ course: Course }> {
-  return serverFetch(`/courses/${courseId}`, { revalidate: 60 });
+  return serverFetch(`/courses/${courseId}`, { auth: true });
 }
 
 export async function getCourses(params?: { q?: string; limit?: number }): Promise<PaginatedResponse<Course>> {
@@ -43,9 +43,9 @@ export async function getCourses(params?: { q?: string; limit?: number }): Promi
 }
 
 export async function getLessons(courseId: string): Promise<{ lessons: Lesson[] }> {
-  return serverFetch(`/courses/${courseId}/lessons`, { revalidate: 60 });
+  return serverFetch(`/courses/${courseId}/lessons`, { auth: true });
 }
 
 export async function getLesson(courseId: string, lessonId: string): Promise<{ lesson: Lesson }> {
-  return serverFetch(`/courses/${courseId}/lessons/${lessonId}`, { revalidate: 60 });
+  return serverFetch(`/courses/${courseId}/lessons/${lessonId}`, { auth: true });
 }

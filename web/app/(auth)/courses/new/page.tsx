@@ -165,35 +165,43 @@ export default function NewCoursePage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)]">
-      <div className="w-72 border-r p-4 overflow-y-auto">
-        <div className="mb-4">
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Course title" className="font-semibold" />
-        </div>
-        <LessonOutlineEditor
-          lessons={lessons}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onReorder={handleReorder}
-          onAdd={handleAddLesson}
-          onDelete={handleDeleteLesson}
-        />
+    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+      <div className="flex items-center justify-between px-4 py-2 border-b bg-background">
+        <span className="text-sm font-medium truncate">{title || "Untitled course"}</span>
+        <Button size="sm" onClick={() => router.push(`/courses/${courseId}`)}>
+          Done
+        </Button>
       </div>
-
-      <div className="flex-1 p-6 overflow-y-auto">
-        {selectedLesson ? (
-          <LessonEditor
-            courseId={courseId}
-            lesson={selectedLesson}
-            onUpdate={(updated) => {
-              setLessons(lessons.map((l) => (l.id === updated.id ? updated : l)));
-            }}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            Select a lesson to edit or add a new one.
+      <div className="flex flex-1 min-h-0">
+        <div className="w-72 border-r p-4 overflow-y-auto">
+          <div className="mb-4">
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Course title" className="font-semibold" />
           </div>
-        )}
+          <LessonOutlineEditor
+            lessons={lessons}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onReorder={handleReorder}
+            onAdd={handleAddLesson}
+            onDelete={handleDeleteLesson}
+          />
+        </div>
+
+        <div className="flex-1 p-6 overflow-y-auto">
+          {selectedLesson ? (
+            <LessonEditor
+              courseId={courseId}
+              lesson={selectedLesson}
+              onUpdate={(updated) => {
+                setLessons(lessons.map((l) => (l.id === updated.id ? updated : l)));
+              }}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              Select a lesson to edit or add a new one.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -210,6 +218,7 @@ function LessonEditor({
 }) {
   const [title, setTitle] = useState(lesson.title);
   const [videoUrl, setVideoUrl] = useState(lesson.video?.source_url || "");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
@@ -219,11 +228,14 @@ function LessonEditor({
 
   const save = useCallback(
     async (updates: any) => {
+      setSaveStatus("saving");
       try {
         const { lesson: updated } = await updateLesson(courseId, lesson.id, updates);
         onUpdate(updated);
+        setSaveStatus("saved");
       } catch {
         toast.error("Failed to save");
+        setSaveStatus("idle");
       }
     },
     [courseId, lesson.id, onUpdate]
@@ -232,6 +244,7 @@ function LessonEditor({
   const debouncedSave = useCallback(
     (updates: any) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      setSaveStatus("saving");
       saveTimeoutRef.current = setTimeout(() => save(updates), 2000);
     },
     [save]
@@ -239,6 +252,12 @@ function LessonEditor({
 
   return (
     <div className="space-y-4 max-w-3xl">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">
+          {saveStatus === "saving" && "Saving..."}
+          {saveStatus === "saved" && "Saved"}
+        </span>
+      </div>
       <div>
         <Label>Title</Label>
         <Input
