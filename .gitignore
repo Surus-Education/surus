@@ -21,3 +21,5 @@ web/out/
 # Exceptions
 !api/.env.example
 !web/.env.example
+.vercel
+.env*
