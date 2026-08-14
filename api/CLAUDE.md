@@ -25,11 +25,24 @@ Feature packages live in `internal/<feature>/` and follow handler / service / mo
 
 `db/*.sql.go` is **generated — never edit by hand.**
 
-1. Edit `db/queries/*.sql` (queries) or `db/migrations/001_initial_schema.sql` (schema).
+1. Edit `db/queries/*.sql` (queries) or `db/migrations/001_initial_schema.up.sql` (schema).
 2. Run `sqlc generate` **from the repo root** — `sqlc.yaml` lives there.
 3. Apply the schema change yourself. There is **no migration runner**; the server only connects and pings.
 
 Apply schema changes on a Neon branch first, verify, then promote. Never apply an unverified change to the production branch.
+
+### Applying schema by hand — read this before pasting anything
+
+Migrations are split into two files, and the split is a safety measure:
+
+- `db/migrations/001_initial_schema.up.sql` — forward statements only. Safe to paste.
+- `db/migrations/001_initial_schema.down.sql` — **all destructive.** Drops every application table. Never run against production.
+
+They used to share one file separated by a `-- +goose Down` marker. goose is not installed here, and that marker is just a comment to every other SQL client — so pasting the file into a console executed 22 `DROP TABLE` statements as ordinary SQL. That happened against production on 2026-08-13 and was saved only by the implicit transaction aborting on the first `CREATE TYPE`, which already existed.
+
+**Applying the up file to a database that already has the schema will fail on the first `CREATE TYPE`.** That is expected. To add only what is new, run those specific statements — not the whole file — and prefer `IF NOT EXISTS`.
+
+`sqlc.yaml` points at the up file explicitly rather than the migrations directory, so sqlc never parses the down file's `DROP`s as schema. Keep it that way when adding migrations.
 
 Type overrides in `sqlc.yaml`: `uuid` → `google/uuid.UUID`, `timestamptz` → `time.Time`, `jsonb` → `json.RawMessage` (nullable), `text[]` → `[]string`. Nullable columns without an override surface as `pgtype.*` — construct them as `pgtype.UUID{Bytes: id, Valid: true}`.
 

@@ -2,7 +2,10 @@ version: "2"
 sql:
   - engine: "postgresql"
     queries: "api/db/queries"
-    schema: "api/db/migrations"
+    # Point at the up file specifically, not the migrations directory. The
+    # directory also holds 001_initial_schema.down.sql, and sqlc would parse
+    # its DROP statements as part of the schema.
+    schema: "api/db/migrations/001_initial_schema.up.sql"
     gen:
       go:
         package: "db"
