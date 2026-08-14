@@ -116,6 +116,20 @@ The practical rule: **all functional testing happens locally**, against a Neon b
 
 GitHub Actions runs build and lint gates only; it never deploys.
 
+### `vercel.json` — the ignoreCommand, and why it looks like that
+
+Both projects share one repo, so each skips builds for commits that changed nothing in its own root directory. That is the `ignoreCommand` in `web/vercel.json` and `api/vercel.json`:
+
+```sh
+base=$(git rev-parse -q --verify "${VERCEL_GIT_PREVIOUS_SHA:-HEAD~1}^{commit}") && git diff --quiet "$base" HEAD -- . || exit 1
+```
+
+Two rules govern it, and both have already broken a deployment:
+
+**Only exit codes 0 and 1 mean anything.** 0 skips the build, 1 builds. Anything else fails the deployment outright rather than falling back. A plain `git diff` against `VERCEL_GIT_PREVIOUS_SHA` exits 128 when that object is missing from the build clone — which happens after any force-push, and can happen in a shallow clone. Hence verifying the base first and falling through to `exit 1`: **uncertainty means build.** A redundant build is cheap; a failed check blocks the PR.
+
+**`vercel.json` rejects unknown keys.** The schema is strict (`should NOT have additional property`) and JSON has no comment syntax, so a `_comment` field fails validation. That is why this explanation lives here instead of next to the command.
+
 **The two services are on different origins in every deployed environment.** That single fact drives most of the cross-cutting complexity: the `access_token` cookie is cross-site (`SameSite=None; Secure`), CORS must echo a specific allowlisted origin because credentials are enabled, and `NEXT_PUBLIC_API_URL` on the web side must point at the matching API deployment. When something works locally and fails deployed, start there.
 
 The API container is **stateless and scales to zero after 5 minutes idle**. Nothing may rely on in-process state or long-lived background timers.
