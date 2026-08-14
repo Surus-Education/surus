@@ -1,8 +1,9 @@
 import { getCourses } from "@/lib/api/server/courses";
 import { CourseCard } from "@/components/course/CourseCard";
+import type { Course } from "@/lib/types";
 
 export default async function HomePage() {
-  let courses: any[] = [];
+  let courses: Course[] = [];
   try {
     const data = await getCourses({ limit: 24 });
     courses = data.data ?? [];

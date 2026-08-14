@@ -1,6 +1,7 @@
 import { getUser } from "@/lib/api/server/users";
 import { notFound } from "next/navigation";
 import { CourseCard } from "@/components/course/CourseCard";
+import type { Course } from "@/lib/types";
 
 export default async function UserProfilePage({
   params,
@@ -39,7 +40,7 @@ export default async function UserProfilePage({
       <h2 className="text-lg font-semibold mb-4">Courses</h2>
       {courses.length > 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          {courses.map((course: any) => (
+          {courses.map((course: Course) => (
             <CourseCard key={course.id} course={course} />
           ))}
         </div>

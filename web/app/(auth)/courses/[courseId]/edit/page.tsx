@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { TiptapEditor } from "@/components/editor/TiptapEditor";
 import { ForkBanner } from "@/components/course/ForkBanner";
 import { getCourse, updateCourse } from "@/lib/api/courses";
 import { getLessons, createLesson, updateLesson, deleteLesson, reorderLessons } from "@/lib/api/lessons";
-import type { Lesson, TiptapDoc } from "@/lib/types";
+import type { Lesson, TiptapDoc, CourseInput, LessonInput } from "@/lib/types";
 import { toast } from "sonner";
 import Link from "next/link";
 import { Eye } from "lucide-react";
@@ -47,28 +47,35 @@ export default function EditCoursePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [visibility, setVisibility] = useState<string>("private");
+  const [visibility, setVisibility] = useState<"public" | "unlisted" | "private">("private");
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "idle">("idle");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  useEffect(() => {
+  // Sync local editable state from fetched data during render rather than in
+  // an effect (avoids the extra render an effect-based sync would cause) —
+  // see https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes.
+  const [prevCourse, setPrevCourse] = useState(course);
+  if (course !== prevCourse) {
+    setPrevCourse(course);
     if (course) {
       setTitle(course.title);
       setDescription(course.description);
       setVisibility(course.visibility);
     }
-  }, [course]);
+  }
 
-  useEffect(() => {
+  const [prevLessonsData, setPrevLessonsData] = useState(lessonsData);
+  if (lessonsData !== prevLessonsData) {
+    setPrevLessonsData(lessonsData);
     if (lessonsData?.lessons) {
       setLessons(lessonsData.lessons);
     }
-  }, [lessonsData]);
+  }
 
   const selectedLesson = lessons.find((l) => l.id === selectedId);
 
   const debouncedSaveCourse = useCallback(
-    (updates: any) => {
+    (updates: Partial<CourseInput>) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       setSaveStatus("saving");
       saveTimeoutRef.current = setTimeout(async () => {
@@ -86,7 +93,7 @@ export default function EditCoursePage() {
 
   const handleAddLesson = async (type: "video" | "page" | "quiz") => {
     try {
-      const input: any = {
+      const input: LessonInput = {
         type,
         title: `New ${type} lesson`,
         position: lessons.length,
@@ -145,10 +152,13 @@ export default function EditCoursePage() {
           />
         </div>
         <div>
-          <Select value={visibility} onValueChange={(v) => {
-            setVisibility(v);
-            debouncedSaveCourse({ visibility: v });
-          }}>
+          <Select
+            value={visibility}
+            onValueChange={(v: "public" | "unlisted" | "private") => {
+              setVisibility(v);
+              debouncedSaveCourse({ visibility: v });
+            }}
+          >
             <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="private">Private</SelectItem>
@@ -180,6 +190,7 @@ export default function EditCoursePage() {
       <div className="flex-1 p-6 overflow-y-auto">
         {selectedLesson ? (
           <LessonEditor
+            key={selectedLesson.id}
             courseId={courseId}
             lesson={selectedLesson}
             onUpdate={(updated) => {
@@ -209,13 +220,18 @@ function LessonEditor({
   const [videoUrl, setVideoUrl] = useState(lesson.video?.source_url || "");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  useEffect(() => {
-    setTitle(lesson.title);
-    setVideoUrl(lesson.video?.source_url || "");
-  }, [lesson.id]);
+  const baseVideo = lesson.video
+    ? {
+        provider: lesson.video.provider,
+        provider_id: lesson.video.provider_id,
+        source_url: lesson.video.source_url,
+        start_seconds: lesson.video.start_seconds ?? undefined,
+        end_seconds: lesson.video.end_seconds ?? undefined,
+      }
+    : { provider: "youtube" as const, provider_id: "", source_url: "" };
 
   const save = useCallback(
-    async (updates: any) => {
+    async (updates: Partial<LessonInput>) => {
       try {
         const { lesson: updated } = await updateLesson(courseId, lesson.id, updates);
         onUpdate(updated);
@@ -227,7 +243,7 @@ function LessonEditor({
   );
 
   const debouncedSave = useCallback(
-    (updates: any) => {
+    (updates: Partial<LessonInput>) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(() => save(updates), 2000);
     },
@@ -270,7 +286,7 @@ function LessonEditor({
             <Label>Curator Notes</Label>
             <TiptapEditor
               content={lesson.video?.curator_notes}
-              onChange={(doc) => debouncedSave({ video: { ...lesson.video, curator_notes: doc } })}
+              onChange={(doc) => debouncedSave({ video: { ...baseVideo, curator_notes: doc } })}
             />
           </div>
         </div>
