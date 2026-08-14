@@ -14,6 +14,7 @@ func (h *Handler) Routes(authCfg *middleware.AuthConfig) chi.Router {
 	r.Post("/magic-link/request", h.MagicLinkRequest)
 	r.Post("/magic-link/verify", h.MagicLinkVerify)
 	r.Post("/refresh", h.Refresh)
+	r.Post("/handoff", h.Handoff)
 
 	r.Group(func(r chi.Router) {
 		r.Use(authCfg.OptionalAuth)

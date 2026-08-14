@@ -19,9 +19,8 @@ export function Nav() {
     }
   };
 
-  const handleLogout = async () => {
-    await logout();
-    router.push("/");
+  const handleLogout = () => {
+    logout();
   };
 
   return (
@@ -63,7 +62,7 @@ export function Nav() {
             </>
           ) : (
             <Button size="sm" asChild>
-              <a href={`${process.env.NEXT_PUBLIC_API_URL?.replace("/v1", "")}/v1/auth/google/start`}>
+              <a href={`${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/v1").replace(/\/v1\/?$/, "")}/auth/google/start`}>
                 Sign in
               </a>
             </Button>

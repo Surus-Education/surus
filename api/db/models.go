@@ -336,6 +336,15 @@ type Course struct {
 	SearchVector interface{}        `json:"search_vector"`
 }
 
+type HandoffCode struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	CodeHash  string             `json:"code_hash"`
+	ExpiresAt time.Time          `json:"expires_at"`
+	UsedAt    pgtype.Timestamptz `json:"used_at"`
+	CreatedAt time.Time          `json:"created_at"`
+}
+
 type Lesson struct {
 	ID          uuid.UUID   `json:"id"`
 	CourseID    uuid.UUID   `json:"course_id"`
