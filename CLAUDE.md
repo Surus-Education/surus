@@ -128,7 +128,15 @@ Two rules govern it, and both have already broken a deployment:
 
 **Only exit codes 0 and 1 mean anything.** 0 skips the build, 1 builds. Anything else fails the deployment outright rather than falling back. A plain `git diff` against `VERCEL_GIT_PREVIOUS_SHA` exits 128 when that object is missing from the build clone — which happens after any force-push, and can happen in a shallow clone. Hence verifying the base first and falling through to `exit 1`: **uncertainty means build.** A redundant build is cheap; a failed check blocks the PR.
 
+**A redeploy of the same commit must still build.** Editing an environment variable in the Vercel dashboard redeploys the *current* commit, so `VERCEL_GIT_PREVIOUS_SHA` equals `HEAD` and a naive diff finds no changes and skips. The build shows as *"Canceled by Ignored Build Step"* and reads like success — while the container keeps running the old environment, so **no env var change ever takes effect.** Hence the explicit `[ "$base" != "$(git rev-parse HEAD)" ]` guard. This cost a production debugging session; do not remove it.
+
 **`vercel.json` rejects unknown keys.** The schema is strict (`should NOT have additional property`) and JSON has no comment syntax, so a `_comment` field fails validation. That is why this explanation lives here instead of next to the command.
+
+### `NEXT_PUBLIC_APP_URL` must not have a trailing slash
+
+On the API this value does double duty, and the two uses disagree about trailing slashes. It is concatenated to build redirect URLs (`frontendURL + "/auth/callback"`), and it seeds the CORS allowlist, which `middleware.originAllowed` matches **exactly** against the browser's `Origin` header — which never carries a trailing slash.
+
+So `https://example.com/` yields a double-slashed redirect *and* rejects every cross-origin request, while looking correct in the dashboard. Symptom: login appears to half-work and every client-side call fails. `main.go` now strips trailing slashes from this and from each `CORS_ALLOWED_ORIGINS` entry, but prefer setting them correctly.
 
 **The two services are on different origins in every deployed environment.** That single fact drives most of the cross-cutting complexity: the `access_token` cookie is cross-site (`SameSite=None; Secure`), CORS must echo a specific allowlisted origin because credentials are enabled, and `NEXT_PUBLIC_API_URL` on the web side must point at the matching API deployment. When something works locally and fails deployed, start there.
 
