@@ -65,7 +65,9 @@ Adding this does not affect the production URI. Both can be registered at once.
 
 There is **no migration runner** — schema changes are applied by hand.
 
-A brand-new Neon branch needs the whole of `api/db/migrations/001_initial_schema.sql`. A branch forked from production already has the schema, so apply only statements added since the fork.
+A brand-new Neon branch needs the whole of `api/db/migrations/001_initial_schema.up.sql`. A branch forked from production already has the schema, so apply only the specific statements added since the fork — not the whole file, which will fail on the first `CREATE TYPE`.
+
+**Never run `001_initial_schema.down.sql`.** It is the rollback: 22 `DROP TABLE` / `DROP TYPE` statements that delete every application table and every row in them. It exists as a separate file precisely so it cannot be pasted into a console by accident.
 
 ### 5. Start both services
 

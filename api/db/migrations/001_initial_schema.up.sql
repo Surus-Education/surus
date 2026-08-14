@@ -1,4 +1,22 @@
--- +goose Up
+-- 001_initial_schema.up.sql
+--
+-- Apply this file to bring an empty database up to the current schema.
+--
+-- There is no migration runner wired up. Applying this by hand is the
+-- documented workflow, so this file contains ONLY forward statements. The
+-- rollback lives in 001_initial_schema.down.sql and is never to be pasted
+-- into a SQL console alongside this one.
+--
+-- Previously the two halves shared a file, separated by a `-- +goose Down`
+-- marker. That marker means something to goose and nothing to anybody else:
+-- pasted into a plain SQL client it is just a comment, and the 22 DROP
+-- statements after it are ordinary executable SQL. Someone did exactly that
+-- against production on 2026-08-13. It was saved only by the implicit
+-- transaction aborting on the first CREATE TYPE, which already existed.
+--
+-- Applying this to a database that already has the schema will fail on the
+-- first CREATE TYPE. That is expected and harmless. To add only what is new,
+-- run the specific statements you need, not this whole file.
 
 -- Enumerations
 CREATE TYPE lesson_type AS ENUM ('video', 'page', 'quiz');
@@ -182,26 +200,3 @@ CREATE TABLE reports (
 );
 CREATE INDEX idx_reports_status ON reports(status);
 CREATE INDEX idx_reports_target ON reports(target_type, target_id);
-
--- +goose Down
-DROP TABLE IF EXISTS reports;
-DROP TABLE IF EXISTS completions;
-DROP TABLE IF EXISTS saves;
-DROP TABLE IF EXISTS quiz_attempts;
-DROP TABLE IF EXISTS quiz_lessons;
-DROP TABLE IF EXISTS page_lessons;
-DROP TABLE IF EXISTS video_lessons;
-DROP TABLE IF EXISTS lessons;
-DROP TABLE IF EXISTS courses;
-DROP TABLE IF EXISTS refresh_tokens;
-DROP TABLE IF EXISTS magic_link_tokens;
-DROP TABLE IF EXISTS oauth_accounts;
-DROP TABLE IF EXISTS users;
-DROP TYPE IF EXISTS report_status;
-DROP TYPE IF EXISTS report_category;
-DROP TYPE IF EXISTS report_target_type;
-DROP TYPE IF EXISTS question_type;
-DROP TYPE IF EXISTS video_provider;
-DROP TYPE IF EXISTS visibility;
-DROP TYPE IF EXISTS lesson_type;
-DROP FUNCTION IF EXISTS courses_search_vector_update;

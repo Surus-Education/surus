@@ -4,7 +4,7 @@ Task board. Agents read this on start, update it on finish. Handoff protocol liv
 
 Status legend: `todo` · `in progress` · `blocked` · `done`
 
-Last updated: 2026-08-13 (2.1 — local dev unblocked, Google localhost redirect URI)
+Last updated: 2026-08-13 (four stacked PRs pushed; Vercel confirmed tracking `main`)
 
 ---
 
@@ -17,7 +17,7 @@ Goal: repeatable multi-agent workflow with scoped tooling and a streamlined Verc
 | 1.1 | Install MCP servers, scope per agent | done   | main        |
 | 1.2 | Author custom agents                 | done   | main        |
 | 1.3 | Scoped rules (`api/`, `web/`)        | done   | main        |
-| 1.4 | Vercel production deploy             | blocked — repo side done, needs dashboard access | main |
+| 1.4 | Vercel production deploy             | in progress — repo side done, both projects confirmed tracking `main`, PRs pushed and awaiting merge | main |
 | 1.5 | Clear 19 `no-explicit-any` lint errors, make lint gate blocking | done | frontend |
 
 ### 1.1 MCP servers — done
@@ -122,15 +122,59 @@ Deliverable: pushing to the production branch deploys both projects to productio
 - `api/.env.example` — documents `NEXT_PUBLIC_APP_URL`, `CORS_ALLOWED_ORIGINS`, and what `APP_ENV` now controls.
 - Cross-origin auth fixes in the API (see Completed) — without these production cannot work at all, previews or no previews.
 
-#### Dashboard side — needs your access
+#### Dashboard side
 
-1. Confirm which branch is the **Production Branch** for both projects.
+1. ~~Confirm which branch is the **Production Branch**~~ — **confirmed 2026-08-13: both projects already track `main`.** No change needed. `main` is therefore the merge target for all work, and merging deploys to production.
 2. **Root Directory** per project: web project → `web/`, api project → `api/`.
 3. Confirm the api project detects `Dockerfile.vercel` and builds a container.
 4. Production env vars:
    - api: `DATABASE_URL` (Neon **pooled**), `JWT_SECRET`, `APP_ENV=production`, `NEXT_PUBLIC_APP_URL` (production web origin), `CORS_ALLOWED_ORIGINS` (exact production web origin), `GOOGLE_REDIRECT_URL`, Google/Postmark/R2 secrets.
-   - web: `NEXT_PUBLIC_API_URL` pointing at the production api origin, **including the `/v1` suffix**.
-5. Register the production api `/auth/google/callback` with Google. One URL, no rotation.
+   - web: `NEXT_PUBLIC_API_URL` pointing at the production api origin, **including the `/v1` suffix**. Strong indirect evidence it is already correct: the pre-fix sign-in link only resolved if this value ended in `/v1`, and production OAuth did reach Google's consent screen.
+5. Register the production api `/auth/google/callback` with Google. Localhost is registered alongside it as of 2026-08-13 — see the OAuth subsection under 2.1.
+
+### Shipping — four stacked PRs pushed 2026-08-13
+
+Branches are on `origin`, PRs not yet opened. Merge **in order**; each is based on the one above it,
+not on `main`.
+
+| # | Branch | Base | Contents |
+| - | ------ | ---- | -------- |
+| 1 | `chore/dev-tooling-and-docs` | `main` | `pnpm dev` startup, CI gate, README, CLAUDE.md files, PLAN.md, vercel.json |
+| 2 | `refactor/web-strict-types` | PR 1 | task 1.5 — `any` removal, lint made blocking |
+| 3 | `fix/auth-session-bugs` | PR 2 | tasks 2.8, 2.10 (hash), 2.11, plus the 1.4 CORS/cookie fixes |
+| 4 | `feat/cross-origin-session-bridge` | PR 3 | task 2.7a–c, the Option B handoff |
+
+Each branch was verified independently: `go build`/`go vet` pass on all four, `pnpm build` on all
+four, `pnpm lint` clean from PR 2 onward. PR 4's tip is byte-identical to the pre-split snapshot, so
+nothing was lost in the split. A local `wip/all-changes` branch holds that snapshot until the PRs
+merge.
+
+The split reconstructs real history rather than the end state: PR 1 lands CI with lint
+`continue-on-error` **because lint was not clean yet**, and PR 2 removes it. Don't "fix" that
+apparent inconsistency later — it is deliberate.
+
+`.claude/` and `.mcp.json` are now gitignored (agent definitions and MCP wiring are one person's
+local setup). The `CLAUDE.md` files and `PLAN.md` are tracked. The agent roster in the root
+`CLAUDE.md` documents a division of labour, not files present in a fresh clone.
+
+#### Production schema — verify before PR 4 merges
+
+The user reports the schema was applied to the production Neon branch at first deploy.
+
+**That cannot cover `handoff_codes`.** That table was created today as part of 2.7a and did not exist
+at any earlier deploy, so a schema applied "when I first deployed" predates it. Either it was applied
+separately today, or it is missing.
+
+This is worth ten seconds of checking because the failure is total and silent:
+`CreateHandoffCode` errors, `GoogleCallbackRedirect` takes its error path, and **every production
+login lands on `/?error=auth_failed`** with nothing obviously wrong in the logs.
+
+```sql
+SELECT to_regclass('public.handoff_codes');  -- NULL means missing
+```
+
+If NULL, apply the DDL from 2.7a **before** PR 4 merges — merging deploys straight to production,
+and there is no staging gate to catch it.
 
 ---
 
