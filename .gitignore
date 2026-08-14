@@ -21,3 +21,19 @@ web/out/
 # Exceptions
 !api/.env.example
 !web/.env.example
+.vercel
+.env*
+
+# Claude
+# The CLAUDE.md convention files and PLAN.md are tracked deliberately — they are
+# shared team context. The agent definitions and MCP server wiring are not: they
+# encode one person's local tooling setup, including which servers are installed.
+.claude/
+.mcp.json
+.claudeignore
+CLAUDE.local.md
+
+# Cursor
+.cursor/
+.cursorignore
+.cursorrules

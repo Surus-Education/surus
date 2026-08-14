@@ -1,0 +1,14 @@
+{
+  "name": "surus",
+  "private": true,
+  "description": "Task runner for local development. The API and web app are independent services with their own dependencies — this exists only so `pnpm dev` starts both.",
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,magenta \"pnpm dev:api\" \"pnpm dev:web\"",
+    "dev:api": "cd api && go run ./cmd/server",
+    "dev:web": "cd web && pnpm dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "packageManager": "pnpm@11.0.0"
+}

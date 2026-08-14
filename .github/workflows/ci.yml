@@ -1,0 +1,70 @@
+name: CI
+
+# Build and lint gate only. Deployment is handled by Vercel's native Git
+# integration, not from here — nothing in this workflow triggers a deploy.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: api (go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      - run: go build ./...
+      - run: go vet ./...
+
+  web:
+    name: web (next)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `version:` here on purpose. The root package.json declares
+      # packageManager: pnpm@11.0.0, and pnpm/action-setup reads it from there.
+      # Specifying both is a hard error ("Multiple versions of pnpm specified"),
+      # so packageManager is the single source of truth — it also drives
+      # Corepack locally, which a workflow-only pin would not.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # Non-blocking for now: the tree has 19 pre-existing errors
+      # (@typescript-eslint/no-explicit-any and react-hooks/set-state-in-effect).
+      # The follow-up PR clears them and removes continue-on-error, making this
+      # a real gate. Landing the workflow first means every subsequent PR gets
+      # CI, rather than waiting on the cleanup.
+      - run: pnpm lint
+        continue-on-error: true
+
+      - run: pnpm build
+        env:
+          # Build-time only. The real value is set per environment in the
+          # Vercel project; this just has to be present and well-formed so the
+          # production build doesn't fail on a missing public env var.
+          NEXT_PUBLIC_API_URL: http://localhost:8080/v1
