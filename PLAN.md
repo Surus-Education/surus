@@ -81,12 +81,18 @@ Two Vercel projects against this one repo:
 - **web** — root directory `web/`, standard Next.js build.
 - **api** — root directory `api/`, container deploy via `api/Dockerfile.vercel`. Vercel detects `Dockerfile.vercel` at the project root, builds it, pushes to Vercel Container Registry, serves from a Fluid-compute Function.
 
-**Decided: production-only deployment, no preview environments.** All testing happens locally; pushes to the production branch deploy straight to prod. Preview deployments are scrapped because rotating per-branch hostnames can never complete a Google OAuth login, and maintaining a stable pre-production API was not worth the isolation it would have given.
+**Decided: production is the only usable deployed environment. All testing happens locally.** Merging to `main` deploys straight to prod.
+
+**Corrected 2026-08-13.** Earlier revisions of this section said "no preview environments" and that previews were "scrapped." That was wrong as a statement of fact — a PR deployment check on PR 2 proved Vercel preview deployments are enabled and running. The *reasoning* held; the conclusion was overstated.
+
+Accurate position: previews exist and are **build verification only, not a test environment.** Rotating per-branch hostnames can never complete a Google OAuth login, so a preview cannot get past sign-in, which puts nearly the whole app out of reach on one. A green preview means "it compiles and deploys." Nothing else.
+
+Consequences unchanged: functional testing is local against a Neon branch, and production is the first place the deployed cross-origin behavior is genuinely exercised. Leave previews on — they are a free extra build signal and cost nothing to ignore.
 
 Consequences of that choice, stated plainly so nobody re-derives them later:
 
 - There is **no staging gate**. Every push to the production branch is live. The GitHub Actions build gate is the only automated check between a push and production.
-- Google OAuth needs a **stable, pre-registered** redirect URL — the production API's `/auth/google/callback`. This is the constraint that drove the decision. (Earlier revisions said "exactly **one**." That was too strong — see the correction under 2.1 below. Google accepts a list; the real constraint is that each entry must be known ahead of time, which rotating preview hostnames can never satisfy. The previews decision stands.)
+- Google OAuth needs a **stable, pre-registered** redirect URL — the production API's `/auth/google/callback`. This is the constraint that makes previews unusable for testing. (Earlier revisions said "exactly **one**." Too strong — see the correction under 2.1. Google accepts a list; the real constraint is that every entry must be known ahead of time, which rotating preview hostnames can never satisfy.)
 - `CORS_ALLOWED_ORIGINS` needs only the exact production web origin. The wildcard matching in `middleware.CORS` stays in the code (guarded and documented) but should be left unused — an exact origin is strictly safer.
 - Confirm which branch Vercel treats as the Production Branch. Current work sits on `vercel`, while `main` is the repo's default.
 
@@ -105,7 +111,7 @@ Constraints the container runtime imposes, not yet handled in code:
 - **Stateless, no durable local storage.** Nothing may rely on process memory persisting between requests.
 - **Neon pooled connection string required** — cold starts churn connections; the direct URL will exhaust limits.
 - **CORS + cookies.** Auth is a JWT in an `access_token` cookie and the two projects sit on different origins. Needs `SameSite=None; Secure` plus a CORS allowlist containing the exact production web origin.
-- **Google OAuth redirect URLs** are registered at root (`/auth/google/start`, `/auth/google/callback`) with no `/v1` prefix. With production-only deployment the deployed entry is one fixed URL — the constraint that killed previews. Local development adds a second, equally stable entry; see the correction under 2.1.
+- **Google OAuth redirect URLs** are registered at root (`/auth/google/start`, `/auth/google/callback`) with no `/v1` prefix. The production entry is one fixed URL; local development adds a second, equally stable one (see the correction under 2.1). Preview hostnames can never be registered, which is why previews cannot complete a login.
 
 Deliverable: pushing to the production branch deploys both projects to production, and a logged-in user can use the app there. All verification before that push happens locally.
 
@@ -315,7 +321,7 @@ Three points that cost time if missed:
 - Plain `http://` is valid here. Google makes an explicit exception to its HTTPS requirement for
   `localhost`, so no tunnel or proxy is needed.
 - Adding it is **additive** — do not remove the production URI. This is why the "exactly one
-  redirect URL" phrasing in 1.4 was wrong: Google accepts a list, and the previews decision rested
+  redirect URL" phrasing in 1.4 was wrong: Google accepts a list, and the previews reasoning rested
   on hostnames being *unpredictable*, not on the list being length one. Localhost is stable, so it
   registers once and stays.
 
@@ -419,7 +425,7 @@ The rows marked "code inspection" / "code trace" were found by reading the code,
 
 While implementing the cross-origin constraints, four real bugs surfaced by inspection and were fixed in `api/`:
 
-- `middleware.CORS` took a single origin and set it unconditionally. It now takes a list, echoes the request's `Origin` only when allowlisted, and always sends `Vary: Origin`. It also supports one `*` wildcard per entry; that was written for per-branch preview hostnames, and since previews were subsequently dropped it should stay unused — a bare `https://*.vercel.app` would let any site on that domain make credentialed requests. The warning lives in the code comment and `.env.example`.
+- `middleware.CORS` took a single origin and set it unconditionally. It now takes a list, echoes the request's `Origin` only when allowlisted, and always sends `Vary: Origin`. It also supports one `*` wildcard per entry; that was written for per-branch preview hostnames, and since previews are build-only and never sign anyone in, it should stay unused — a bare `https://*.vercel.app` would let any site on that domain make credentialed requests. The warning lives in the code comment and `.env.example`.
 - `access_token` and `refresh_token` were `SameSite=Lax`, which browsers withhold on cross-site requests. `Secure` and `SameSite` are now chosen together in `cookieAttrs()` — `None`+`Secure` when deployed, `Lax` without `Secure` for plain-HTTP localhost, since browsers reject `None` without `Secure`.
 - `refresh_token` was scoped `Path=/auth/refresh` while the route is mounted at `/v1/auth/refresh`, so the browser never sent it and refresh could not have worked in any environment. Now a named constant.
 - `ClearTokenCookies` omitted `Secure`/`SameSite`, so its deletion cookie didn't match the original and would append a second cookie rather than overwrite it.
@@ -530,7 +536,7 @@ Three ways out, in recommended order:
 **A. Custom domain.** `surus.com` → web project, `api.surus.com` → api project. The API sets
 `Domain=.surus.com`, both origins share the cookie, and `SameSite=Lax` is enough — the cross-site
 problem stops existing rather than being worked around. Also gives Google OAuth one permanent
-redirect URL, which is the same constraint that killed previews in 1.4. Cost: a domain purchase
+redirect URL, which is the same constraint that makes previews unusable for testing (1.4). Cost: a domain purchase
 and DNS setup. Changes needed in code are small (a `COOKIE_DOMAIN` env var read in `cookieAttrs`).
 
 **B. Web-side callback handoff.** `GoogleCallbackRedirect` redirects to a Next Route Handler on the
@@ -571,7 +577,7 @@ would land in browser history, access logs, and `Referer` headers.
 
 Resolved:
 
-- **Preview environments — dropped (2026-08-13).** Deploy production-only; test locally. Google OAuth rejects unregistered redirect URLs and preview hostnames rotate, so preview logins could never work without a stable dedicated domain. Not worth the cost. Accepted tradeoff: no staging gate, every push to the production branch is live.
+- **Preview environments — kept, but build-only (2026-08-13, corrected same day).** Vercel previews are enabled and run on PRs; an earlier revision wrongly recorded them as "dropped." They are build verification, not a test environment: Google OAuth rejects unregistered redirect URLs and preview hostnames rotate, so a preview login can never complete. Functional testing is local against a Neon branch. Accepted tradeoff: no staging gate, merging to `main` is live.
 - `deploy` agent MCP choice — agent dropped.
 - MCP credential storage — all OAuth or localhost, nothing to commit.
 
