@@ -39,11 +39,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # package.json has no packageManager field, so the version must be
-      # pinned here. Matches the pnpm 11 that maintains web/pnpm-lock.yaml.
+      # No `version:` here on purpose. The root package.json declares
+      # packageManager: pnpm@11.0.0, and pnpm/action-setup reads it from there.
+      # Specifying both is a hard error ("Multiple versions of pnpm specified"),
+      # so packageManager is the single source of truth — it also drives
+      # Corepack locally, which a workflow-only pin would not.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
 
       - uses: actions/setup-node@v4
         with:
