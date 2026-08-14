@@ -108,9 +108,13 @@ Two Vercel projects backed by this one repo:
 - **web** — root directory `web/`, standard Next.js build.
 - **api** — root directory `api/`, deployed as a container. Vercel detects `Dockerfile.vercel` at the project root, builds the image, pushes it to the Vercel Container Registry, and serves it from a Fluid-compute Function.
 
-Deployment is driven by Vercel's native Git integration, and is **production-only — there are no preview environments.** Pushing the production branch deploys straight to production, so all verification happens locally first. There is no deploy step in CI; GitHub Actions only runs build/lint gates, and that gate is the only automated check between a push and production.
+Deployment is driven by Vercel's native Git integration. Merging to `main` deploys straight to production — there is no staging gate.
 
-Previews were dropped deliberately: Google OAuth rejects unregistered redirect URLs and preview hostnames rotate per branch, so a preview login could never complete without a dedicated stable domain.
+**Vercel preview deployments do run on pull requests, but they are build verification only, not a test environment.** A preview proves the project compiles and deploys; it cannot be used to exercise the app. Preview hostnames rotate per branch, and Google OAuth only redirects to pre-registered URLs, so login can never complete on one. Everything downstream of login — which is nearly the whole app — is unreachable there.
+
+The practical rule: **all functional testing happens locally**, against a Neon branch. A green preview means "it builds," nothing more. Production is the first environment where the deployed cross-origin behavior is genuinely exercised, which is why that path deserves a real check immediately after a merge.
+
+GitHub Actions runs build and lint gates only; it never deploys.
 
 **The two services are on different origins in every deployed environment.** That single fact drives most of the cross-cutting complexity: the `access_token` cookie is cross-site (`SameSite=None; Secure`), CORS must echo a specific allowlisted origin because credentials are enabled, and `NEXT_PUBLIC_API_URL` on the web side must point at the matching API deployment. When something works locally and fails deployed, start there.
 
