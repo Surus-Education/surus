@@ -6,7 +6,7 @@ import { useUIStore } from "@/lib/stores/uiStore";
 
 export function AuthPrompt() {
   const { authPromptOpen, authPromptAction, closeAuthPrompt } = useUIStore();
-  const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace("/v1", "") || "http://localhost:8080";
+  const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/v1").replace(/\/v1\/?$/, "");
 
   return (
     <Dialog open={authPromptOpen} onOpenChange={(open) => !open && closeAuthPrompt()}>
@@ -19,7 +19,7 @@ export function AuthPrompt() {
         </DialogHeader>
         <div className="flex flex-col gap-3 pt-2">
           <Button asChild>
-            <a href={`${apiBase}/v1/auth/google/start`}>Sign in with Google</a>
+            <a href={`${apiBase}/auth/google/start`}>Sign in with Google</a>
           </Button>
           <Button variant="outline" asChild>
             <a href="/signin">Sign in with email</a>

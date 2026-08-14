@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/erc-pham/surus/api/internal/middleware"
@@ -215,9 +216,56 @@ func (h *Handler) GoogleCallbackRedirect(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_ = user
+	// Populate the API-origin cookie jar. This still works because this
+	// handler runs on a top-level navigation to the API origin — see
+	// PLAN.md decision 2. It does NOT make the session visible to the web
+	// app, which reads its own origin's jar; the handoff code below bridges
+	// that gap.
 	h.service.SetTokenCookies(w, tokens)
 	h.clearOAuthStateCookie(w)
 
-	http.Redirect(w, r, h.frontendURL+"/dashboard", http.StatusTemporaryRedirect)
+	handoffCode, err := h.service.CreateHandoffCode(r.Context(), user.ID)
+	if err != nil {
+		http.Redirect(w, r, h.frontendURL+"?error=auth_failed", http.StatusTemporaryRedirect)
+		return
+	}
+
+	// Never put the JWT itself in the URL — it would land in browser
+	// history, access logs, and Referer headers. The code is an opaque,
+	// single-use, 60s-TTL lookup key; POST /v1/auth/handoff exchanges it for
+	// the real tokens server-to-server.
+	http.Redirect(w, r, h.frontendURL+"/auth/callback?code="+url.QueryEscape(handoffCode), http.StatusTemporaryRedirect)
+}
+
+// Handoff exchanges a single-use handoff code (minted by
+// GoogleCallbackRedirect) for a fresh token pair. It is meant to be called
+// server-to-server by the web app's own route handler, not by a browser
+// directly: the response body carries the raw access_token/refresh_token so
+// the caller can set its own cookies on the web origin, so this endpoint
+// deliberately does NOT set any cookies itself. Single-use enforcement and
+// the short TTL on the code are the entire defense for handing out raw
+// tokens in a response body — see Service.RedeemHandoffCode.
+func (h *Handler) Handoff(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		middleware.RespondError(w, http.StatusBadRequest, "validation_error", "Invalid request body")
+		return
+	}
+	if input.Code == "" {
+		middleware.RespondError(w, http.StatusBadRequest, "validation_error", "Code is required")
+		return
+	}
+
+	_, tokens, err := h.service.RedeemHandoffCode(r.Context(), input.Code)
+	if err != nil {
+		middleware.HandleServiceError(w, r, err)
+		return
+	}
+
+	middleware.RespondJSON(w, http.StatusOK, map[string]any{
+		"access_token":  tokens.AccessToken,
+		"refresh_token": tokens.RefreshToken,
+	})
 }

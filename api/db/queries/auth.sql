@@ -36,3 +36,20 @@ UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1;
 
 -- name: RevokeAllUserRefreshTokens :exec
 UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL;
+
+-- name: CreateHandoffCode :one
+INSERT INTO handoff_codes (user_id, code_hash, expires_at)
+VALUES ($1, $2, $3)
+RETURNING id, user_id, code_hash, expires_at, used_at, created_at;
+
+-- name: RedeemHandoffCode :one
+-- Atomic conditional update: a concurrent double-submit of the same code can
+-- only have one caller win this UPDATE, since the WHERE clause excludes rows
+-- already marked used or expired. A SELECT-then-UPDATE pair would race here.
+UPDATE handoff_codes
+SET used_at = now()
+WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now()
+RETURNING id, user_id, code_hash, expires_at, used_at, created_at;
+
+-- name: RevokeAllUserHandoffCodes :exec
+UPDATE handoff_codes SET used_at = now() WHERE user_id = $1 AND used_at IS NULL;

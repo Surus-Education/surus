@@ -14,6 +14,12 @@ import (
 const (
 	AccessTokenTTL  = 15 * time.Minute
 	RefreshTokenTTL = 30 * 24 * time.Hour
+
+	// HandoffCodeTTL is deliberately short: the code is a single-use bridge
+	// between the API-origin cookie and the web-origin cookie (PLAN.md
+	// decision 2, option B), redeemed within one redirect round-trip. 60s is
+	// the maximum allowed — see api handoff endpoint notes.
+	HandoffCodeTTL = 60 * time.Second
 )
 
 type TokenPair struct {
@@ -74,6 +80,27 @@ func GenerateMagicLinkToken() (raw string, hash string, err error) {
 // GenerateMagicLinkToken stores, so a presented raw token can be hashed and
 // looked up directly.
 func HashMagicLinkToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+// GenerateHandoffCode returns a random raw code plus a SHA-256 hex digest of
+// it, same deterministic scheme as the refresh/magic-link tokens. The raw
+// value is never stored — only the digest — and the raw value must never be
+// put anywhere but a one-time redirect query string (never logged, never in
+// the JWT itself).
+func GenerateHandoffCode() (raw string, hash string, err error) {
+	b := make([]byte, 32)
+	if _, err = rand.Read(b); err != nil {
+		return "", "", err
+	}
+	raw = base64.URLEncoding.EncodeToString(b)
+	return raw, HashHandoffCode(raw), nil
+}
+
+// HashHandoffCode produces the same deterministic digest GenerateHandoffCode
+// stores, so a presented raw code can be hashed and looked up directly.
+func HashHandoffCode(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
 }

@@ -77,6 +77,24 @@ CREATE TABLE refresh_tokens (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Handoff codes: single-use, short-lived exchange codes used to bridge the
+-- session from the API origin's cookie jar to the web origin's, since the two
+-- sit on different hosts in every deployed environment (see PLAN.md decision 2).
+-- The API mints one after a successful login/OAuth callback and redirects the
+-- browser to a web-side route with it in the query string; that route
+-- exchanges it via POST /v1/auth/handoff for a fresh token pair and sets its
+-- own cookies. code_hash stores a SHA-256 digest of the raw code, never the
+-- raw value itself.
+CREATE TABLE handoff_codes (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash   TEXT NOT NULL UNIQUE,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  used_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_handoff_codes_user ON handoff_codes(user_id) WHERE used_at IS NULL;
+
 -- Courses
 CREATE TABLE courses (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -257,7 +257,66 @@ func (s *Service) RefreshSession(ctx context.Context, rawRefreshToken string) (*
 }
 
 func (s *Service) Logout(ctx context.Context, userID uuid.UUID) error {
-	return s.queries.RevokeAllUserRefreshTokens(ctx, userID)
+	if err := s.queries.RevokeAllUserRefreshTokens(ctx, userID); err != nil {
+		return err
+	}
+	// Also revoke any outstanding handoff codes: a code that was minted but
+	// never redeemed (e.g. the user closed the tab mid-redirect) must not be
+	// usable to resurrect a session after logout.
+	return s.queries.RevokeAllUserHandoffCodes(ctx, userID)
+}
+
+// CreateHandoffCode mints a single-use, short-lived code bound to userID and
+// returns the raw value for the caller to put in a redirect URL. Only the
+// SHA-256 hash is stored — see db/migrations' handoff_codes comment for why.
+func (s *Service) CreateHandoffCode(ctx context.Context, userID uuid.UUID) (string, error) {
+	raw, hash, err := GenerateHandoffCode()
+	if err != nil {
+		return "", middleware.WrapServiceError("internal_error", "Failed to generate handoff code", err)
+	}
+
+	_, err = s.queries.CreateHandoffCode(ctx, db.CreateHandoffCodeParams{
+		UserID:    userID,
+		CodeHash:  hash,
+		ExpiresAt: time.Now().Add(HandoffCodeTTL),
+	})
+	if err != nil {
+		return "", middleware.WrapServiceError("internal_error", "Failed to store handoff code", err)
+	}
+
+	return raw, nil
+}
+
+// RedeemHandoffCode exchanges a raw handoff code for a fresh token pair. The
+// underlying query is a conditional UPDATE ... WHERE used_at IS NULL RETURNING,
+// which atomically claims the row — a concurrent double-submit of the same
+// code can only have one winner, so this alone is what enforces single-use.
+func (s *Service) RedeemHandoffCode(ctx context.Context, rawCode string) (*db.User, *TokenPair, error) {
+	if rawCode == "" {
+		return nil, nil, middleware.NewServiceError("unauthenticated", "Invalid or expired handoff code")
+	}
+
+	hash := HashHandoffCode(rawCode)
+
+	row, err := s.queries.RedeemHandoffCode(ctx, hash)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil, middleware.NewServiceError("unauthenticated", "Invalid or expired handoff code")
+		}
+		return nil, nil, middleware.WrapServiceError("internal_error", "Failed to redeem handoff code", err)
+	}
+
+	user, err := s.queries.GetUserByID(ctx, row.UserID)
+	if err != nil {
+		return nil, nil, middleware.WrapServiceError("internal_error", "Failed to fetch user", err)
+	}
+
+	tokens, err := s.issueTokens(ctx, &user)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &user, tokens, nil
 }
 
 func (s *Service) GetMe(ctx context.Context, userID uuid.UUID) (*db.User, error) {

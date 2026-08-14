@@ -12,6 +12,32 @@ import (
 	"github.com/google/uuid"
 )
 
+const createHandoffCode = `-- name: CreateHandoffCode :one
+INSERT INTO handoff_codes (user_id, code_hash, expires_at)
+VALUES ($1, $2, $3)
+RETURNING id, user_id, code_hash, expires_at, used_at, created_at
+`
+
+type CreateHandoffCodeParams struct {
+	UserID    uuid.UUID `json:"user_id"`
+	CodeHash  string    `json:"code_hash"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func (q *Queries) CreateHandoffCode(ctx context.Context, arg CreateHandoffCodeParams) (HandoffCode, error) {
+	row := q.db.QueryRow(ctx, createHandoffCode, arg.UserID, arg.CodeHash, arg.ExpiresAt)
+	var i HandoffCode
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.CodeHash,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createMagicLinkToken = `-- name: CreateMagicLinkToken :one
 INSERT INTO magic_link_tokens (email, token_hash, expires_at)
 VALUES ($1, $2, $3)
@@ -159,6 +185,39 @@ UPDATE magic_link_tokens SET used_at = now() WHERE id = $1
 
 func (q *Queries) MarkMagicLinkTokenUsed(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, markMagicLinkTokenUsed, id)
+	return err
+}
+
+const redeemHandoffCode = `-- name: RedeemHandoffCode :one
+UPDATE handoff_codes
+SET used_at = now()
+WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now()
+RETURNING id, user_id, code_hash, expires_at, used_at, created_at
+`
+
+// Atomic conditional update: a concurrent double-submit of the same code can
+// only have one caller win this UPDATE, since the WHERE clause excludes rows
+// already marked used or expired. A SELECT-then-UPDATE pair would race here.
+func (q *Queries) RedeemHandoffCode(ctx context.Context, codeHash string) (HandoffCode, error) {
+	row := q.db.QueryRow(ctx, redeemHandoffCode, codeHash)
+	var i HandoffCode
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.CodeHash,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const revokeAllUserHandoffCodes = `-- name: RevokeAllUserHandoffCodes :exec
+UPDATE handoff_codes SET used_at = now() WHERE user_id = $1 AND used_at IS NULL
+`
+
+func (q *Queries) RevokeAllUserHandoffCodes(ctx context.Context, userID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, revokeAllUserHandoffCodes, userID)
 	return err
 }
 

@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS video_lessons;
 DROP TABLE IF EXISTS lessons;
 DROP TABLE IF EXISTS courses;
 DROP TABLE IF EXISTS refresh_tokens;
+DROP TABLE IF EXISTS handoff_codes;
 DROP TABLE IF EXISTS magic_link_tokens;
 DROP TABLE IF EXISTS oauth_accounts;
 DROP TABLE IF EXISTS users;

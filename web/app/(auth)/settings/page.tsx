@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +14,6 @@ import { toast } from "sonner";
 
 export default function SettingsPage() {
   const { user, logout } = useAuth();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
@@ -36,8 +34,7 @@ export default function SettingsPage() {
     onSuccess: async () => {
       setDeleteDialogOpen(false);
       toast.success("Account deletion scheduled. You have 30 days to change your mind.");
-      await logout();
-      router.push("/");
+      logout();
     },
     onError: () => toast.error("Failed to schedule deletion"),
   });
