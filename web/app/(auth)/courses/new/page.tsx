@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { LessonOutlineEditor } from "@/components/editor/LessonOutlineEditor";
 import { TiptapEditor } from "@/components/editor/TiptapEditor";
 import { createCourse } from "@/lib/api/courses";
 import { createLesson, updateLesson, deleteLesson, reorderLessons } from "@/lib/api/lessons";
-import type { Lesson, TiptapDoc, CourseInput } from "@/lib/types";
+import type { Lesson, TiptapDoc, CourseInput, LessonInput } from "@/lib/types";
 import { toast } from "sonner";
 
 export default function NewCoursePage() {
@@ -54,7 +54,7 @@ export default function NewCoursePage() {
   const handleAddLesson = async (type: "video" | "page" | "quiz") => {
     if (!courseId) return;
     try {
-      const input: any = {
+      const input: LessonInput = {
         type,
         title: `New ${type} lesson`,
         position: lessons.length,
@@ -147,7 +147,10 @@ export default function NewCoursePage() {
           </div>
           <div>
             <Label>Visibility</Label>
-            <Select value={visibility} onValueChange={(v: any) => setVisibility(v)}>
+            <Select
+              value={visibility}
+              onValueChange={(v: "public" | "unlisted" | "private") => setVisibility(v)}
+            >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="private">Private</SelectItem>
@@ -190,6 +193,7 @@ export default function NewCoursePage() {
         <div className="flex-1 p-6 overflow-y-auto">
           {selectedLesson ? (
             <LessonEditor
+              key={selectedLesson.id}
               courseId={courseId}
               lesson={selectedLesson}
               onUpdate={(updated) => {
@@ -221,13 +225,18 @@ function LessonEditor({
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  useEffect(() => {
-    setTitle(lesson.title);
-    setVideoUrl(lesson.video?.source_url || "");
-  }, [lesson.id]);
+  const baseVideo = lesson.video
+    ? {
+        provider: lesson.video.provider,
+        provider_id: lesson.video.provider_id,
+        source_url: lesson.video.source_url,
+        start_seconds: lesson.video.start_seconds ?? undefined,
+        end_seconds: lesson.video.end_seconds ?? undefined,
+      }
+    : { provider: "youtube" as const, provider_id: "", source_url: "" };
 
   const save = useCallback(
-    async (updates: any) => {
+    async (updates: Partial<LessonInput>) => {
       setSaveStatus("saving");
       try {
         const { lesson: updated } = await updateLesson(courseId, lesson.id, updates);
@@ -242,7 +251,7 @@ function LessonEditor({
   );
 
   const debouncedSave = useCallback(
-    (updates: any) => {
+    (updates: Partial<LessonInput>) => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       setSaveStatus("saving");
       saveTimeoutRef.current = setTimeout(() => save(updates), 2000);
@@ -297,7 +306,7 @@ function LessonEditor({
             <TiptapEditor
               content={lesson.video?.curator_notes}
               onChange={(doc) => {
-                debouncedSave({ video: { ...lesson.video, curator_notes: doc } });
+                debouncedSave({ video: { ...baseVideo, curator_notes: doc } });
               }}
             />
           </div>

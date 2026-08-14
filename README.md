@@ -105,7 +105,11 @@ Conventions for each side live next to the code: [`api/CLAUDE.md`](api/CLAUDE.md
 
 Two Vercel projects backed by this one repo: **web** (root directory `web/`) and **api** (root directory `api/`, built as a container from `Dockerfile.vercel`).
 
-Deployment is **production-only — there are no preview environments.** Preview hostnames rotate per branch and Google OAuth rejects unregistered redirect URLs, so a preview login could never complete. The consequence: **merging to the production branch deploys straight to production**, and GitHub Actions' build/lint gate is the only automated check in between. Verify locally first.
+**Merging to `main` deploys straight to production.** There is no staging gate.
+
+Vercel does create preview deployments for pull requests, but treat them as **build verification only — they are not a test environment.** Preview hostnames rotate per branch and Google OAuth only redirects to pre-registered URLs, so you cannot sign in on a preview, which puts nearly the whole app out of reach. A green preview means the project compiles and deploys, nothing more.
+
+**Do your functional testing locally**, against a Neon branch (see Quick Start). Between a merge and production there is nothing but the GitHub Actions build/lint gate, so anything you did not check locally is checked by your users.
 
 The API container is stateless and scales to zero after 5 minutes idle, so nothing may rely on in-process state or background timers.
 

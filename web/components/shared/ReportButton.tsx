@@ -13,6 +13,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useUIStore } from "@/lib/stores/uiStore";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api/client";
+import type { ReportInput } from "@/lib/types";
 
 const CATEGORIES = [
   { value: "incorrect", label: "Incorrect content" },
@@ -33,15 +34,15 @@ export function ReportButton({
   const { user } = useAuth();
   const { openAuthPrompt } = useUIStore();
   const [open, setOpen] = useState(false);
-  const [category, setCategory] = useState<string>("incorrect");
+  const [category, setCategory] = useState<ReportInput["category"]>("incorrect");
   const [body, setBody] = useState("");
 
   const mutation = useMutation({
     mutationFn: async () => {
       if (targetType === "course") {
-        return reportCourse(courseId, { category: category as any, body });
+        return reportCourse(courseId, { category, body });
       }
-      return reportLesson(courseId, lessonId!, { category: category as any, body });
+      return reportLesson(courseId, lessonId!, { category, body });
     },
     onSuccess: () => {
       toast.success("Report submitted. Thank you.");
@@ -88,7 +89,7 @@ export function ReportButton({
                       name="category"
                       value={cat.value}
                       checked={category === cat.value}
-                      onChange={(e) => setCategory(e.target.value)}
+                      onChange={(e) => setCategory(e.target.value as ReportInput["category"])}
                     />
                     {cat.label}
                   </label>

@@ -72,9 +72,22 @@ export interface QuizDetail {
   questions: QuizQuestion[];
 }
 
+export interface TiptapMark {
+  type: string;
+  attrs?: Record<string, unknown>;
+}
+
+export interface TiptapNode {
+  type: string;
+  attrs?: Record<string, unknown>;
+  content?: TiptapNode[];
+  marks?: TiptapMark[];
+  text?: string;
+}
+
 export interface TiptapDoc {
   type: "doc";
-  content: any[];
+  content: TiptapNode[];
 }
 
 export interface QuizQuestion {

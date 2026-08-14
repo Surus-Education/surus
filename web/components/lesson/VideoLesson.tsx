@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type ComponentType } from "react";
 import dynamic from "next/dynamic";
 import type { VideoDetail } from "@/lib/types";
 import { ExternalLink } from "lucide-react";
 import { TiptapRenderer } from "@/components/editor/TiptapRenderer";
 
-const ReactPlayer = dynamic(() => import("react-player").then((mod) => mod.default as ComponentType<any>), {
+const ReactPlayer = dynamic(() => import("react-player").then((mod) => mod.default), {
   ssr: false,
 });
 
@@ -17,7 +16,7 @@ export function VideoLesson({ video }: { video: VideoDetail }) {
     <div className="space-y-4">
       <div className="aspect-video bg-black rounded-lg overflow-hidden">
         <ReactPlayer
-          url={sourceUrl}
+          src={sourceUrl}
           playing={false}
           controls={true}
           width="100%"

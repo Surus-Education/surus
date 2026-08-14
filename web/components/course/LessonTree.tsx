@@ -5,9 +5,11 @@ import { CheckCircle, Circle, FileText, Video, HelpCircle, AlertTriangle } from 
 import type { Lesson } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+type TreeLesson = Lesson & { children: TreeLesson[] };
+
 function buildTree(lessons: Lesson[]) {
-  const roots: (Lesson & { children: Lesson[] })[] = [];
-  const map = new Map<string, Lesson & { children: Lesson[] }>();
+  const roots: TreeLesson[] = [];
+  const map = new Map<string, TreeLesson>();
 
   for (const l of lessons) {
     map.set(l.id, { ...l, children: [] });
@@ -37,7 +39,7 @@ function LessonNode({
   completedLessonIds,
   depth = 0,
 }: {
-  lesson: Lesson & { children: Lesson[] };
+  lesson: TreeLesson;
   courseId: string;
   completedLessonIds: Set<string>;
   depth?: number;
@@ -65,7 +67,7 @@ function LessonNode({
           <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 shrink-0" />
         )}
       </Link>
-      {lesson.children.map((child: any) => (
+      {lesson.children.map((child: TreeLesson) => (
         <LessonNode
           key={child.id}
           lesson={child}

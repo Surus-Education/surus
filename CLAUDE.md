@@ -108,9 +108,27 @@ Two Vercel projects backed by this one repo:
 - **web** — root directory `web/`, standard Next.js build.
 - **api** — root directory `api/`, deployed as a container. Vercel detects `Dockerfile.vercel` at the project root, builds the image, pushes it to the Vercel Container Registry, and serves it from a Fluid-compute Function.
 
-Deployment is driven by Vercel's native Git integration, and is **production-only — there are no preview environments.** Pushing the production branch deploys straight to production, so all verification happens locally first. There is no deploy step in CI; GitHub Actions only runs build/lint gates, and that gate is the only automated check between a push and production.
+Deployment is driven by Vercel's native Git integration. Merging to `main` deploys straight to production — there is no staging gate.
 
-Previews were dropped deliberately: Google OAuth rejects unregistered redirect URLs and preview hostnames rotate per branch, so a preview login could never complete without a dedicated stable domain.
+**Vercel preview deployments do run on pull requests, but they are build verification only, not a test environment.** A preview proves the project compiles and deploys; it cannot be used to exercise the app. Preview hostnames rotate per branch, and Google OAuth only redirects to pre-registered URLs, so login can never complete on one. Everything downstream of login — which is nearly the whole app — is unreachable there.
+
+The practical rule: **all functional testing happens locally**, against a Neon branch. A green preview means "it builds," nothing more. Production is the first environment where the deployed cross-origin behavior is genuinely exercised, which is why that path deserves a real check immediately after a merge.
+
+GitHub Actions runs build and lint gates only; it never deploys.
+
+### `vercel.json` — the ignoreCommand, and why it looks like that
+
+Both projects share one repo, so each skips builds for commits that changed nothing in its own root directory. That is the `ignoreCommand` in `web/vercel.json` and `api/vercel.json`:
+
+```sh
+base=$(git rev-parse -q --verify "${VERCEL_GIT_PREVIOUS_SHA:-HEAD~1}^{commit}") && git diff --quiet "$base" HEAD -- . || exit 1
+```
+
+Two rules govern it, and both have already broken a deployment:
+
+**Only exit codes 0 and 1 mean anything.** 0 skips the build, 1 builds. Anything else fails the deployment outright rather than falling back. A plain `git diff` against `VERCEL_GIT_PREVIOUS_SHA` exits 128 when that object is missing from the build clone — which happens after any force-push, and can happen in a shallow clone. Hence verifying the base first and falling through to `exit 1`: **uncertainty means build.** A redundant build is cheap; a failed check blocks the PR.
+
+**`vercel.json` rejects unknown keys.** The schema is strict (`should NOT have additional property`) and JSON has no comment syntax, so a `_comment` field fails validation. That is why this explanation lives here instead of next to the command.
 
 **The two services are on different origins in every deployed environment.** That single fact drives most of the cross-cutting complexity: the `access_token` cookie is cross-site (`SameSite=None; Secure`), CORS must echo a specific allowlisted origin because credentials are enabled, and `NEXT_PUBLIC_API_URL` on the web side must point at the matching API deployment. When something works locally and fails deployed, start there.
 

@@ -54,13 +54,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Non-blocking for now: the tree has 19 pre-existing errors
-      # (@typescript-eslint/no-explicit-any and react-hooks/set-state-in-effect).
-      # The follow-up PR clears them and removes continue-on-error, making this
-      # a real gate. Landing the workflow first means every subsequent PR gets
-      # CI, rather than waiting on the cleanup.
       - run: pnpm lint
-        continue-on-error: true
 
       - run: pnpm build
         env:
