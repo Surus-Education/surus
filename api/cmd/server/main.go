@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -51,6 +52,17 @@ func main() {
 		frontendURL = "http://localhost:3000"
 	}
 
+	// The web app is a separate Vercel project on a different origin, and each
+	// preview branch gets its own hostname, so the allowlist takes a
+	// comma-separated list and permits "*" wildcards. frontendURL is always
+	// included so local development works with no extra configuration.
+	corsOrigins := []string{frontendURL}
+	for _, o := range strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",") {
+		if o = strings.TrimSpace(o); o != "" && o != frontendURL {
+			corsOrigins = append(corsOrigins, o)
+		}
+	}
+
 	authService := auth.NewService(auth.Config{
 		Pool:              pool,
 		JWTSecret:         jwtSecret,
@@ -71,7 +83,7 @@ func main() {
 
 	r := chi.NewRouter()
 
-	r.Use(middleware.CORS(frontendURL))
+	r.Use(middleware.CORS(corsOrigins))
 	r.Use(middleware.RateLimit(middleware.NewRateLimiter(300)))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {

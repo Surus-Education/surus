@@ -182,11 +182,17 @@ func (s *Service) RequestMagicLink(ctx context.Context, email string) (string, e
 }
 
 func (s *Service) VerifyMagicLink(ctx context.Context, rawToken string) (*db.User, *TokenPair, error) {
-	rows, err := s.queries.GetMagicLinkTokenByHash(ctx, rawToken)
+	hash := HashMagicLinkToken(rawToken)
+
+	// GetMagicLinkTokenByHash already filters to used_at IS NULL AND
+	// expires_at > now(), so a missing row covers "not found", "expired", and
+	// "already used" alike.
+	rows, err := s.queries.GetMagicLinkTokenByHash(ctx, hash)
 	if err != nil {
-		// We need to iterate all unexpired tokens to find the match via bcrypt
-		// For MVP, we search by brute force since volume is low
-		return nil, nil, middleware.NewServiceError("validation_error", "Invalid or expired token")
+		if err == pgx.ErrNoRows {
+			return nil, nil, middleware.NewServiceError("unauthenticated", "Invalid or expired token")
+		}
+		return nil, nil, middleware.WrapServiceError("internal_error", "Failed to look up magic link token", err)
 	}
 
 	if err := s.queries.MarkMagicLinkTokenUsed(ctx, rows.ID); err != nil {
@@ -216,10 +222,38 @@ func (s *Service) VerifyMagicLink(ctx context.Context, rawToken string) (*db.Use
 }
 
 func (s *Service) RefreshSession(ctx context.Context, rawRefreshToken string) (*db.User, *TokenPair, error) {
-	// We need to find the matching refresh token by checking all non-revoked tokens
-	// In MVP with low volume, this is acceptable
-	// The hash is stored, so we iterate
-	return nil, nil, middleware.NewServiceError("unauthenticated", "Invalid refresh token")
+	if rawRefreshToken == "" {
+		return nil, nil, middleware.NewServiceError("unauthenticated", "Invalid refresh token")
+	}
+
+	hash := HashRefreshToken(rawRefreshToken)
+
+	// GetRefreshTokenByHash already filters to revoked_at IS NULL AND expires_at > now(),
+	// so a missing row covers "not found", "expired", and "revoked" alike.
+	stored, err := s.queries.GetRefreshTokenByHash(ctx, hash)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil, middleware.NewServiceError("unauthenticated", "Invalid refresh token")
+		}
+		return nil, nil, middleware.WrapServiceError("internal_error", "Failed to look up refresh token", err)
+	}
+
+	user, err := s.queries.GetUserByID(ctx, stored.UserID)
+	if err != nil {
+		return nil, nil, middleware.WrapServiceError("internal_error", "Failed to fetch user", err)
+	}
+
+	tokens, err := s.issueTokens(ctx, &user)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Rotate: revoke the token that was just used so it can't be replayed.
+	if err := s.queries.RevokeRefreshToken(ctx, stored.ID); err != nil {
+		return nil, nil, middleware.WrapServiceError("internal_error", "Failed to revoke used refresh token", err)
+	}
+
+	return &user, tokens, nil
 }
 
 func (s *Service) Logout(ctx context.Context, userID uuid.UUID) error {
@@ -260,15 +294,42 @@ func (s *Service) issueTokens(ctx context.Context, user *db.User) (*TokenPair, e
 	}, nil
 }
 
+// refreshCookiePath must match the mounted route (/v1/auth/refresh). A cookie
+// scoped to a narrower path than the endpoint is simply never sent, which makes
+// every refresh attempt look like an expired session.
+const refreshCookiePath = "/v1/auth/refresh"
+
+// cookieAttrs picks Secure and SameSite together, because the two are coupled:
+// browsers reject SameSite=None unless Secure is also set.
+//
+// Deployed, the web app and this API are separate Vercel projects on different
+// origins, so the cookies are cross-site and must be SameSite=None or the
+// browser withholds them from every fetch the frontend makes. Local
+// development runs over plain HTTP, where SameSite=None is invalid, so it falls
+// back to Lax — same-origin-ish local usage doesn't need None anyway.
+func (s *Service) cookieAttrs() (bool, http.SameSite) {
+	if s.appEnv == "development" {
+		return false, http.SameSiteLaxMode
+	}
+	return true, http.SameSiteNoneMode
+}
+
+// CookieAttrs exposes cookieAttrs to callers outside the package (the
+// handler's oauth_state cookie) so every cookie this service issues shares
+// one Secure/SameSite decision instead of hardcoding its own.
+func (s *Service) CookieAttrs() (bool, http.SameSite) {
+	return s.cookieAttrs()
+}
+
 func (s *Service) SetTokenCookies(w http.ResponseWriter, tokens *TokenPair) {
-	secure := s.appEnv != "development"
+	secure, sameSite := s.cookieAttrs()
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
 		Value:    tokens.AccessToken,
 		HttpOnly: true,
 		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: sameSite,
 		Path:     "/",
 		MaxAge:   900,
 	})
@@ -278,17 +339,24 @@ func (s *Service) SetTokenCookies(w http.ResponseWriter, tokens *TokenPair) {
 		Value:    tokens.RefreshToken,
 		HttpOnly: true,
 		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/auth/refresh",
+		SameSite: sameSite,
+		Path:     refreshCookiePath,
 		MaxAge:   2592000,
 	})
 }
 
+// ClearTokenCookies must repeat the same Secure/SameSite/Path attributes used
+// when setting them. A deletion cookie whose attributes don't match writes a
+// second cookie instead of overwriting the original, leaving the user logged in.
 func (s *Service) ClearTokenCookies(w http.ResponseWriter) {
+	secure, sameSite := s.cookieAttrs()
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
 		Value:    "",
 		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
 		Path:     "/",
 		MaxAge:   -1,
 	})
@@ -296,7 +364,9 @@ func (s *Service) ClearTokenCookies(w http.ResponseWriter) {
 		Name:     "refresh_token",
 		Value:    "",
 		HttpOnly: true,
-		Path:     "/auth/refresh",
+		Secure:   secure,
+		SameSite: sameSite,
+		Path:     refreshCookiePath,
 		MaxAge:   -1,
 	})
 }

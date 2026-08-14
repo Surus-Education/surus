@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -9,6 +10,47 @@ import (
 
 	"github.com/erc-pham/surus/api/internal/middleware"
 )
+
+// oauthStateCookieName is shared by every handler that sets or reads the
+// CSRF state cookie for the Google OAuth flow.
+const oauthStateCookieName = "oauth_state"
+
+// setOAuthStateCookie mirrors the Secure/SameSite attributes the session
+// cookies use (Service.CookieAttrs) rather than hardcoding them.
+//
+// Note the previous SameSite=Lax was NOT the reason OAuth failed: Lax cookies
+// are sent on cross-site top-level GET navigations, which is exactly what
+// Google's redirect back to the callback is, and a cookie without Secure is
+// still sent over HTTPS. The real defect was that state was never verified at
+// all. The attributes are shared here so the JSON GoogleStart/GoogleCallback
+// pair works too — that flow reaches the callback via fetch rather than a
+// top-level navigation, and Lax genuinely would withhold the cookie there.
+func (h *Handler) setOAuthStateCookie(w http.ResponseWriter, state string) {
+	secure, sameSite := h.service.CookieAttrs()
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthStateCookieName,
+		Value:    state,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+		Path:     "/",
+		MaxAge:   600,
+	})
+}
+
+func (h *Handler) clearOAuthStateCookie(w http.ResponseWriter) {
+	secure, sameSite := h.service.CookieAttrs()
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthStateCookieName,
+		Value:    "",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
+	})
+}
 
 type Handler struct {
 	service     *Service
@@ -24,14 +66,7 @@ func (h *Handler) GoogleStart(w http.ResponseWriter, r *http.Request) {
 	rand.Read(b)
 	state := base64.URLEncoding.EncodeToString(b)
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_state",
-		Value:    state,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/",
-		MaxAge:   600,
-	})
+	h.setOAuthStateCookie(w, state)
 
 	http.Redirect(w, r, h.service.GoogleAuthURL(state), http.StatusTemporaryRedirect)
 }
@@ -148,44 +183,41 @@ func (h *Handler) GoogleStartRedirect(w http.ResponseWriter, r *http.Request) {
 	rand.Read(b)
 	state := base64.URLEncoding.EncodeToString(b)
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_state",
-		Value:    state,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Path:     "/",
-		MaxAge:   600,
-	})
+	h.setOAuthStateCookie(w, state)
 
 	http.Redirect(w, r, h.service.GoogleAuthURL(state), http.StatusTemporaryRedirect)
 }
 
 func (h *Handler) GoogleCallbackRedirect(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
-	_ = r.URL.Query().Get("state")
+	state := r.URL.Query().Get("state")
 
 	if code == "" {
 		http.Redirect(w, r, h.frontendURL+"?error=auth_failed", http.StatusTemporaryRedirect)
 		return
 	}
 
+	// CSRF check: the state returned by Google must match the one we handed
+	// out and stored in the oauth_state cookie. Missing cookie or mismatch
+	// both fail closed.
+	cookie, err := r.Cookie(oauthStateCookieName)
+	if err != nil || state == "" ||
+		subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(state)) != 1 {
+		h.clearOAuthStateCookie(w)
+		http.Redirect(w, r, h.frontendURL+"?error=auth_failed", http.StatusTemporaryRedirect)
+		return
+	}
+
 	user, tokens, err := h.service.ExchangeGoogleCode(r.Context(), code)
 	if err != nil {
+		h.clearOAuthStateCookie(w)
 		http.Redirect(w, r, h.frontendURL+"?error=auth_failed", http.StatusTemporaryRedirect)
 		return
 	}
 
 	_ = user
 	h.service.SetTokenCookies(w, tokens)
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oauth_state",
-		Value:    "",
-		HttpOnly: true,
-		Path:     "/",
-		MaxAge:   -1,
-		Expires:  time.Unix(0, 0),
-	})
+	h.clearOAuthStateCookie(w)
 
 	http.Redirect(w, r, h.frontendURL+"/dashboard", http.StatusTemporaryRedirect)
 }
