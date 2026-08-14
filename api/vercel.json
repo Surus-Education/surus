@@ -1,4 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "git diff --quiet ${VERCEL_GIT_PREVIOUS_SHA:-HEAD^} HEAD -- ."
+
+  "_comment": "Skip the build when this commit changed nothing in this project's root directory. VERCEL_GIT_PREVIOUS_SHA is verified before use: after a force-push (or in a shallow clone) it can name an object this clone does not have, and a bare `git diff` against it exits 128, which Vercel treats as a failed deployment rather than build/skip. Exit 0 skips, 1 builds; anything unresolvable falls through to 1, so uncertainty means build.",
+
+  "ignoreCommand": "base=$(git rev-parse -q --verify \"${VERCEL_GIT_PREVIOUS_SHA:-HEAD~1}^{commit}\") && git diff --quiet \"$base\" HEAD -- . || exit 1"
 }
