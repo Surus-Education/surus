@@ -47,18 +47,25 @@ func main() {
 	jwtSecret := []byte(os.Getenv("JWT_SECRET"))
 	authCfg := &middleware.AuthConfig{JWTSecret: jwtSecret}
 
-	frontendURL := os.Getenv("NEXT_PUBLIC_APP_URL")
+	// Trailing slashes are stripped because this value does double duty and the
+	// two uses disagree about them. It is concatenated to build redirect URLs
+	// (frontendURL + "/auth/callback"), where a trailing slash produces a
+	// double slash, and it seeds the CORS allowlist, which is matched exactly
+	// against the browser's Origin header — and an Origin never has a trailing
+	// slash. A single "/" typed into the Vercel dashboard therefore silently
+	// rejected every cross-origin request in production while looking correct.
+	frontendURL := strings.TrimRight(os.Getenv("NEXT_PUBLIC_APP_URL"), "/")
 	if frontendURL == "" {
 		frontendURL = "http://localhost:3000"
 	}
 
-	// The web app is a separate Vercel project on a different origin, and each
-	// preview branch gets its own hostname, so the allowlist takes a
-	// comma-separated list and permits "*" wildcards. frontendURL is always
-	// included so local development works with no extra configuration.
+	// The web app is a separate Vercel project on a different origin, so the
+	// allowlist takes a comma-separated list. frontendURL is always included so
+	// local development works with no extra configuration. Entries are
+	// normalized the same way, for the same reason.
 	corsOrigins := []string{frontendURL}
 	for _, o := range strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",") {
-		if o = strings.TrimSpace(o); o != "" && o != frontendURL {
+		if o = strings.TrimRight(strings.TrimSpace(o), "/"); o != "" && o != frontendURL {
 			corsOrigins = append(corsOrigins, o)
 		}
 	}

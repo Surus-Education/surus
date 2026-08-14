@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "base=$(git rev-parse -q --verify \"${VERCEL_GIT_PREVIOUS_SHA:-HEAD~1}^{commit}\") && git diff --quiet \"$base\" HEAD -- . || exit 1"
+  "ignoreCommand": "base=$(git rev-parse -q --verify \"${VERCEL_GIT_PREVIOUS_SHA:-HEAD~1}^{commit}\") && [ \"$base\" != \"$(git rev-parse HEAD)\" ] && git diff --quiet \"$base\" HEAD -- . || exit 1"
 }
